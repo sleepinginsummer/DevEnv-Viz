@@ -5,6 +5,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: path.join(__dirname, 'dist-web/icon.png'), // Will try to load icon from build folder if exists
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false, // For simple demos; use preload scripts for production security

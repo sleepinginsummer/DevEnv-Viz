@@ -31,193 +31,171 @@ const MOCK_DATA: EnvTool[] = [
 
   // Go
   { id: 'g1', name: 'Go 1.18', type: ToolType.GO, version: '1.18.3', path: '/usr/local/go/bin/go', isSystemDefault: false, source: 'System', detectedAt: new Date().toISOString() },
-  { id: 'g2', name: 'Go 1.21', type: ToolType.GO, version: '1.21.0', path: '/Users/user/sdk/go1.21.0/bin/go', isSystemDefault: true, source: 'GoBrew', detectedAt: new Date().toISOString() },
+  { id: 'g2', name: 'Go 1.21', type: ToolType.GO, version: '1.21.0', path: '/opt/homebrew/Cellar/go/1.21.0/bin/go', isSystemDefault: true, source: 'Homebrew', detectedAt: new Date().toISOString() },
 ];
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  
-  // LOGIC: If running in Electron (Real App), start empty to show real system state.
-  // If running in Web Browser (Dev/Preview), show Mock Data.
-  const [tools, setTools] = useState<EnvTool[]>(() => {
-    return isElectron() ? [] : MOCK_DATA;
-  });
-  
-  const [language, setLanguage] = useState<Language>('zh'); 
+  const [language, setLanguage] = useState<Language>('en');
+  const [tools, setTools] = useState<EnvTool[]>(isElectron() ? [] : MOCK_DATA);
   
   // Command Modal State
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalData, setModalData] = useState({ title: '', command: '', description: '', isDestructive: false });
-
+  const [modalData, setModalData] = useState({ title: '', cmd: '', desc: '', isDestructive: false });
+  
   // Version Selector State
   const [selectorOpen, setSelectorOpen] = useState(false);
-  const [selectorType, setSelectorType] = useState<ToolType>(ToolType.JAVA);
+  const [selectorTool, setSelectorTool] = useState<ToolType>(ToolType.UNKNOWN);
 
   const t = translations[language];
 
   const handleImport = (newTools: EnvTool[]) => {
+    // Merge new tools with existing ones
     setTools(prev => {
-      const existingPaths = new Set(prev.map(t => t.path));
-      const filteredNew = newTools.filter(t => !existingPaths.has(t.path));
-      return [...prev, ...filteredNew];
+      const unique = [...prev];
+      newTools.forEach(nt => {
+        if (!unique.find(u => u.id === nt.id || (u.type === nt.type && u.version === nt.version))) {
+          unique.push(nt);
+        }
+      });
+      return unique;
     });
-    // Optional: Auto-switch to first tab if tools found, or stay on dashboard
-    // setActiveTab('dashboard');
-  };
-
-  const showCommand = (title: string, command: string, description: string, isDestructive: boolean = false) => {
-    setModalData({ title, command, description, isDestructive });
-    setModalOpen(true);
-  };
-
-  // --- Command Generators ---
-  const getUninstallCmd = (tool: EnvTool) => {
-    if (tool.source.toLowerCase().includes('brew')) return `brew uninstall ${tool.type.toLowerCase()}@${tool.version.split('.')[0]}`;
-    if (tool.type === ToolType.NODE) return `nvm uninstall ${tool.version}`;
-    if (tool.type === ToolType.PYTHON) return `pyenv uninstall ${tool.version}`;
-    return `sudo rm -rf "${tool.path}"`;
-  };
-
-  const getSetGlobalCmd = (tool: EnvTool) => {
-    if (tool.type === ToolType.JAVA) return `export JAVA_HOME="${tool.path}"\nexport PATH="$JAVA_HOME/bin:$PATH"`;
-    if (tool.type === ToolType.GO) return `export GOROOT="${tool.path}"\nexport PATH="$GOROOT/bin:$PATH"`;
-    if (tool.type === ToolType.NODE) return `nvm use ${tool.version}`;
-    if (tool.type === ToolType.PYTHON) return `pyenv global ${tool.version}`; 
-    return `export PATH="${tool.path}:$PATH"`;
   };
 
   const handleRemove = (id: string) => {
-    const tool = tools.find(t => t.id === id);
-    if (!tool) return;
     showCommand(
-      `${t.uninstall} ${tool.name}`, 
-      getUninstallCmd(tool), 
-      language === 'zh' ? "请在终端执行此命令卸载，然后刷新页面。" : "Run this in terminal to uninstall, then refresh.",
-      true // Destructive
+      translations[language].uninstall,
+      `echo "Simulating removal of tool ID: ${id}"`, // In real app, this would be specific uninstall cmd
+      "This will remove the selected environment version.",
+      true // isDestructive
     );
+    setTools(prev => prev.filter(t => t.id !== id));
+  };
+
+  const showCommand = (title: string, cmd: string, desc: string, isDestructive: boolean = false) => {
+    setModalData({ title, cmd, desc, isDestructive });
+    setModalOpen(true);
   };
 
   const handleSetGlobal = (tool: EnvTool) => {
-    showCommand(
-      t.setGlobal,
-      getSetGlobalCmd(tool),
-      language === 'zh' ? "复制命令并在终端运行以切换全局环境变量。" : "Run this to set global environment variables.",
-      false
-    );
+    let cmd = '';
+    let hint = '';
+
+    if (tool.type === ToolType.JAVA) {
+      cmd = `export JAVA_HOME="${tool.path}" && export PATH="$JAVA_HOME/bin:$PATH"`;
+      hint = "Updates JAVA_HOME in your current session. Add to ~/.zshrc to make permanent.";
+    } else if (tool.type === ToolType.PYTHON) {
+      if (tool.source === 'PyEnv') {
+        cmd = `pyenv global ${tool.version}`;
+        hint = "Sets global python version via PyEnv.";
+      } else {
+        cmd = `alias python="${tool.path}"`;
+        hint = "Sets python alias.";
+      }
+    } else if (tool.type === ToolType.NODE) {
+      if (tool.source === 'NVM') {
+        cmd = `nvm use ${tool.version} && nvm alias default ${tool.version}`;
+        hint = "Switches Node version via NVM and sets as default.";
+      } else {
+        cmd = `export PATH="${tool.path.replace('/bin/node', '/bin')}:$PATH"`;
+        hint = "Updates PATH to prioritize this Node version.";
+      }
+    } else if (tool.type === ToolType.GO) {
+      cmd = `export PATH="${tool.path.replace('/bin/go', '/bin')}:$PATH"`;
+      hint = "Updates PATH to use this Go version.";
+    }
+
+    showCommand(translations[language].setGlobal, cmd, hint);
   };
 
-  const handleOpenInstallSelector = (type: string) => {
-    if (Object.values(ToolType).includes(type as ToolType)) {
-      setSelectorType(type as ToolType);
-      setSelectorOpen(true);
-    }
+  const handleInstallClick = (type: ToolType) => {
+    setSelectorTool(type);
+    setSelectorOpen(true);
   };
 
   const handleVersionSelect = (version: string, cmd: string) => {
     setSelectorOpen(false);
     showCommand(
-      `${t.installNew} ${version}`,
+      `${translations[language].installNew} ${version}`,
       cmd,
-      language === 'zh' ? "复制命令到终端执行安装。" : "Run this command in terminal to install.",
-      false
+      "Run this command to install the selected version."
     );
   };
 
-  // --- UI Rendering ---
   const toolCounts = {
-    'dashboard': 0,
+    dashboard: 0,
     'env-vars': 0,
     [ToolType.JAVA]: tools.filter(t => t.type === ToolType.JAVA).length,
     [ToolType.PYTHON]: tools.filter(t => t.type === ToolType.PYTHON).length,
     [ToolType.GO]: tools.filter(t => t.type === ToolType.GO).length,
     [ToolType.NODE]: tools.filter(t => t.type === ToolType.NODE).length,
+    [ToolType.UNKNOWN]: 0
   };
 
   const renderContent = () => {
-    if (activeTab === 'dashboard') {
-      return (
-        <div className="h-full overflow-y-auto">
-          <Dashboard tools={tools} language={language} onImport={handleImport} />
-        </div>
-      );
-    }
-
-    if (activeTab === 'env-vars') {
-      return <EnvVarManager language={language} onRunCommand={showCommand} />;
-    }
-
-    const filteredTools = tools.filter(t => t.type === activeTab);
-    
-    // SPECIAL CASE: PYTHON MANAGER HANDLES EVERYTHING FOR PYTHON TAB
-    if (activeTab === ToolType.PYTHON) {
-      return (
-        <PythonManager 
-          tools={filteredTools} 
-          lang={language}
-          onRunCommand={showCommand}
-          onRemoveTool={handleRemove}
-          onSetGlobal={handleSetGlobal}
-          onInstall={() => handleOpenInstallSelector(activeTab)}
-        />
-      );
-    }
-
-    // GENERIC LIST VIEW FOR OTHER TOOLS (Java, Go, Node) - WITH STICKY HEADER
-    return (
-      <div className="flex flex-col h-full overflow-hidden">
-        {/* Fixed Header */}
-        <div className="flex-none pb-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              {translations[language].toolNames[activeTab as ToolType]}
-            </h2>
-            <div className="flex gap-2">
-              <button 
-                onClick={() => handleOpenInstallSelector(activeTab)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-lg"
-              >
-                <span>+</span> {t.installNew}
-              </button>
-              <span className="text-slate-500 text-sm bg-slate-800 px-3 py-2 rounded-lg border border-slate-700 flex items-center shadow">
-                {filteredTools.length} installed
-              </span>
+    switch (activeTab) {
+      case 'dashboard':
+        return <Dashboard tools={tools} language={language} onImport={handleImport} />;
+      case 'env-vars':
+        return <EnvVarManager language={language} onRunCommand={showCommand} />;
+      case ToolType.PYTHON:
+        return (
+          <PythonManager 
+            tools={tools.filter(t => t.type === ToolType.PYTHON)} 
+            lang={language}
+            onRunCommand={showCommand}
+            onRemoveTool={handleRemove}
+            onSetGlobal={handleSetGlobal}
+            onInstall={() => handleInstallClick(ToolType.PYTHON)}
+          />
+        );
+      case ToolType.JAVA:
+      case ToolType.GO:
+      case ToolType.NODE:
+        const currentTools = tools.filter(t => t.type === activeTab);
+        return (
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-none pb-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                   {translations[language].toolNames[activeTab as ToolType]}
+                </h2>
+                <button 
+                  onClick={() => handleInstallClick(activeTab as ToolType)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-lg"
+                >
+                  <span>+</span> {translations[language].installNew}
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto min-h-0 animate-fade-in pr-2 pb-20">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {currentTools.length === 0 ? (
+                  <p className="text-slate-500 italic col-span-full text-center py-10">No versions detected.</p>
+                ) : (
+                  currentTools.map(tool => (
+                    <ToolCard 
+                      key={tool.id} 
+                      tool={tool} 
+                      onRemove={handleRemove}
+                      onSetGlobal={() => handleSetGlobal(tool)}
+                      setGlobalLabel={translations[language].setGlobal}
+                      activeGlobalLabel={translations[language].currentGlobal}
+                    />
+                  ))
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        
-        {/* Scrollable List */}
-        <div className="flex-1 overflow-y-auto min-h-0 pr-2 pb-20 animate-fade-in">
-          {filteredTools.length === 0 ? (
-            <div className="text-center py-20 bg-slate-800/50 rounded-2xl border border-dashed border-slate-700">
-              <p className="text-slate-500">{t.scanError}</p>
-              <button 
-                onClick={() => setActiveTab('dashboard')} // Redirect to dashboard for scanner
-                className="mt-4 text-blue-400 hover:text-blue-300 font-medium"
-              >
-                Go to Dashboard
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTools.map(tool => (
-                <ToolCard 
-                  key={tool.id} 
-                  tool={tool} 
-                  onRemove={() => handleRemove(tool.id)} 
-                  onSetGlobal={() => handleSetGlobal(tool)}
-                  setGlobalLabel={t.setGlobal}
-                  activeGlobalLabel={t.currentGlobal}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
+        );
+      default:
+        return <div className="text-white">Select a tool</div>;
+    }
   };
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden">
+    <div className="flex h-screen bg-slate-900 text-slate-200 font-sans selection:bg-blue-500/30 overflow-hidden">
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
@@ -227,27 +205,29 @@ const App: React.FC = () => {
       />
       
       {/* 
-        Main container fixed to screen height.
-        Content inside manages its own scrolling.
+        Main Content Area 
+        WebkitAppRegion: 'drag' makes the container draggable (like a title bar).
       */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden p-8">
-        {renderContent()}
+      <main className="flex-1 relative bg-slate-900 overflow-hidden" style={{ WebkitAppRegion: 'drag' } as any}>
+        <div className="absolute inset-0 p-8 overflow-hidden flex flex-col" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {renderContent()}
+        </div>
       </main>
 
       {modalOpen && (
         <CommandModal 
           title={modalData.title}
-          command={modalData.command}
-          description={modalData.description}
+          command={modalData.cmd}
+          description={modalData.desc}
+          isDestructive={modalData.isDestructive}
           onClose={() => setModalOpen(false)}
           language={language}
-          isDestructive={modalData.isDestructive}
         />
       )}
 
       {selectorOpen && (
         <VersionSelector
-          toolType={selectorType}
+          toolType={selectorTool}
           language={language}
           onSelect={handleVersionSelect}
           onClose={() => setSelectorOpen(false)}
