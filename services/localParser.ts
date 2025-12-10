@@ -3,7 +3,7 @@ import { EnvTool, ToolType, PipPackage, Platform } from '../types';
 // Regex patterns for different tools
 const PATTERNS = {
   // Matches: "openjdk 17.0.2 2022-01-18" or "java version "1.8.0_151""
-  JAVA_SIMPLE: /(?:java|openjdk) (?:version )?"?(\d+(?:\.\d+)*(?:[._]\d+)?)/i,
+  JAVA_SIMPLE: /(?:java|openjdk) (?:version )?"?(\d+(?:\.\d+)*(?:[._-]\d+)?)/i,
   // Matches: /usr/libexec/java_home -V output: "17.0.2 (x86_64) "Oracle Corporation" - "Java SE 17.0.2" /Library/Java/..."
   JAVA_HOME_V: /^\s+(\d+(?:\.\d+)*[._-]?\w*)\s+\([^)]+\)\s+"[^"]+"\s+-\s+"[^"]+"\s+(.+)$/,
   
@@ -29,27 +29,42 @@ const PATTERNS = {
   PATH_LINE: /^Path:\s+(.+)$/
 };
 
-const cleanVersion = (v: string) => v.replace(/^v/, '');
+// Helper to normalize versions for comparison (e.g. 1.8.0_472 -> 1.8.0.472)
+const normalizeVersion = (v: string) => {
+  return v.replace(/_/g, '.').replace(/-/g, '.');
+};
 
 const deduplicateTools = (tools: EnvTool[]): EnvTool[] => {
   const map = new Map<string, EnvTool>();
   
   tools.forEach(tool => {
-    // Key by Type + Version (Major.Minor) to merge same installs
-    // e.g. Java 17.0.2 and Java 17.0.2 should merge
-    const key = `${tool.type}-${tool.version}`;
+    // Key by Type + Normalized Version to merge same installs
+    // This fixes issues where '1.8.0_472' matches '1.8.0.472'
+    const normVer = normalizeVersion(tool.version);
+    const key = `${tool.type}-${normVer}`;
     
     if (map.has(key)) {
       const existing = map.get(key)!;
-      // Merge logic: prefer specific paths over "Detected"
-      // Prefer "SystemDefault" true over false
-      // Prefer specific sources (Brew, Pyenv) over "Manual"
+      
+      // Merge logic:
+      // 1. Prefer specific paths over "Detected"
+      // 2. Prefer "SystemDefault" true over false (if one scan said it was default)
+      // 3. Prefer specific sources (Brew, Pyenv) over "Manual/System"
+      
+      const hasRealPath = !tool.path.includes('Detected') && tool.path.includes('/');
+      const existingHasRealPath = !existing.path.includes('Detected') && existing.path.includes('/');
+
+      const bestPath = hasRealPath ? tool.path : existing.path;
+      const bestName = existing.name.includes('JDK') ? existing.name : tool.name; // Prefer "JDK" in name if possible
       
       const merged: EnvTool = {
         ...existing,
-        path: (existing.path.includes('Detected') && !tool.path.includes('Detected')) ? tool.path : existing.path,
+        name: bestName,
+        path: bestPath,
         isSystemDefault: existing.isSystemDefault || tool.isSystemDefault,
-        source: existing.source === 'System/Manual' ? tool.source : existing.source
+        source: existing.source === 'System' || existing.source === 'System (Detected)' ? tool.source : existing.source,
+        // Keep the version string that looks most complete
+        version: tool.version.length > existing.version.length ? tool.version : existing.version
       };
       map.set(key, merged);
     } else {
@@ -65,10 +80,6 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
   const rawResults: EnvTool[] = [];
   const now = new Date().toISOString();
   
-  // Context tracking (e.g., if we see a "Path: ..." line, associate it with the recently found tool?)
-  // Actually, our scanner outputs "Path: ..." right after the version command usually.
-  // But strictly, we parse line by line. 
-
   lines.forEach(line => {
     const cleanLine = line.trim();
     if (!cleanLine) return;
@@ -81,8 +92,8 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
         name: 'Java JDK',
         type: ToolType.JAVA,
         version: javaHomeMatch[1],
-        path: javaHomeMatch[2], // Real path from java_home
-        isSystemDefault: false, // Usually list is all, not default
+        path: javaHomeMatch[2], 
+        isSystemDefault: false,
         source: 'System (Detected)',
         detectedAt: now
       });
@@ -92,11 +103,11 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
     if (javaMatch && !cleanLine.includes('javac') && !cleanLine.includes('Path:')) {
       rawResults.push({
         id: `java-simple-${javaMatch[1]}`,
-        name: cleanLine.includes('openjdk') ? 'OpenJDK' : 'Java SE',
+        name: cleanLine.toLowerCase().includes('openjdk') ? 'OpenJDK' : 'Java SE',
         type: ToolType.JAVA,
         version: javaMatch[1],
         path: 'System Path (Detected)', 
-        isSystemDefault: true, // Output from 'java -version' usually implies active
+        isSystemDefault: true, 
         source: 'System',
         detectedAt: now
       });
@@ -112,7 +123,7 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
         name: 'Python (PyEnv)',
         type: ToolType.PYTHON,
         version: pyenvMatch[1],
-        path: isActive ? 'Active PyEnv Shim' : '~/.pyenv/versions/' + pyenvMatch[1],
+        path: isActive ? 'Active PyEnv Shim' : `~/.pyenv/versions/${pyenvMatch[1]}`,
         isSystemDefault: isActive,
         source: 'PyEnv',
         detectedAt: now
@@ -136,8 +147,7 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
 
     // --- GO ---
     const goDirMatch = cleanLine.match(PATTERNS.GO_DIR);
-    if (goDirMatch && !line.includes('go version')) {
-        // likely a folder listing
+    if (goDirMatch && !line.includes('go version') && !line.includes('Path:')) {
         rawResults.push({
         id: `go-dir-${goDirMatch[1]}`,
         name: 'Go SDK',
@@ -168,7 +178,6 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
     // --- NODE ---
     const nodeDirMatch = cleanLine.match(PATTERNS.NODE_DIR);
     if (nodeDirMatch) {
-        // NVM folder listing
         rawResults.push({
             id: `node-nvm-${nodeDirMatch[1]}`,
             name: 'Node.js (NVM)',
@@ -199,9 +208,10 @@ export const parseEnvironmentLogs = (input: string, platform: Platform): EnvTool
     // --- EXPLICIT PATH INJECTION ---
     const pathMatch = cleanLine.match(PATTERNS.PATH_LINE);
     if (pathMatch && rawResults.length > 0) {
-      // Assign this path to the most recently added tool if it matches generic path
+      // Assign this path to the most recently added tool if it's currently generic
+      // Or if we simply want to capture the path for the tool context
       const lastTool = rawResults[rawResults.length - 1];
-      if (lastTool.path === 'System Path (Detected)') {
+      if (lastTool.path === 'System Path (Detected)' || lastTool.path === 'Active PyEnv Shim') {
         lastTool.path = pathMatch[1].trim();
       }
     }
@@ -214,15 +224,13 @@ export const parsePipPackages = (input: string): PipPackage[] => {
   const lines = input.split('\n');
   const packages: PipPackage[] = [];
   
-  // Standard Libs (Mock list for detection)
-  const builtIns = new Set(['pip', 'setuptools', 'wheel', 'distribute']);
+  // Common packages to flag as Core/Built-in (simplified list)
+  const builtIns = new Set(['pip', 'setuptools', 'wheel', 'distribute', 'python-dateutil', 'six']);
 
   lines.forEach(line => {
     const cleanLine = line.trim();
-    // Skip header lines or empty lines
     if (!cleanLine || cleanLine.startsWith('Package') || cleanLine.startsWith('----')) return;
 
-    // Split by whitespace: "numpy    1.21.5"
     const parts = cleanLine.split(/\s+/);
     if (parts.length >= 2) {
       const name = parts[0];

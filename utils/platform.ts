@@ -6,6 +6,13 @@ export const isElectron = (): boolean => {
   return userAgent.indexOf(' electron/') > -1;
 };
 
+export const detectOS = (): Platform => {
+  if (typeof navigator === 'undefined') return Platform.MAC;
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes('win')) return Platform.WINDOWS;
+  return Platform.MAC;
+};
+
 export const runCommand = async (cmd: string): Promise<string> => {
   if (!isElectron()) {
     // SIMULATION MODE FOR WEB PREVIEW
@@ -17,19 +24,37 @@ export const runCommand = async (cmd: string): Promise<string> => {
   }
   
   // Dynamic import to avoid breaking Vite in web mode
-  // In Electron with nodeIntegration: true, window.require is available
   try {
-    const { exec } = window.require('child_process');
+    // Fix: Property 'require' does not exist on type 'Window & typeof globalThis'
+    const { exec } = (window as any).require('child_process');
+    const os = detectOS();
+    
+    // On macOS/Linux, wrap in a login shell to ensure PATH is loaded from .zshrc/.bash_profile
+    // On Windows, use default shell
+    const finalCmd = os === Platform.MAC 
+      ? `/bin/zsh -l -c "${cmd.replace(/"/g, '\\"')}"`
+      : cmd;
+
     return new Promise((resolve, reject) => {
-      exec(cmd, (error: any, stdout: string, stderr: string) => {
+      exec(finalCmd, (error: any, stdout: string, stderr: string) => {
         if (error) {
-          // Some commands output version to stderr (like java -version)
-          if (stderr && !stdout && !error.message.includes('Command failed')) {
-             resolve(stderr);
+          // Some commands output version info to stderr (like java -version), which is not an error.
+          // If we have stderr but no error code/signal implies it might be just info, 
+          // BUT exec returns 'error' object if the command exits with non-zero.
+          
+          // If we have useful info in stderr, return it.
+          if (stderr && !stdout) {
+             // Heuristic: if it says "command not found", it's a real error.
+             if (stderr.toLowerCase().includes('not found') || stderr.toLowerCase().includes('error')) {
+               resolve(`Error: ${stderr}`);
+             } else {
+               // Otherwise, treat stderr as output (common for version commands)
+               resolve(stderr);
+             }
              return;
           }
-          // For explicit execution, we want to know it failed
-          resolve(`Error Code: ${error.code}\n${stderr || error.message}`);
+          
+          resolve(`Execution Error (Code ${error.code}):\n${stderr || error.message}`);
           return;
         }
         resolve(stdout || stderr || "Success (No Output)");
@@ -37,13 +62,6 @@ export const runCommand = async (cmd: string): Promise<string> => {
     });
   } catch (e: any) {
     console.error("Electron require failed", e);
-    return `Execution System Error: ${e.message}`;
+    return `System Interface Error: ${e.message}`;
   }
-};
-
-export const detectOS = (): Platform => {
-  if (typeof navigator === 'undefined') return Platform.MAC;
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('win')) return Platform.WINDOWS;
-  return Platform.MAC;
 };
