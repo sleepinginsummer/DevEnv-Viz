@@ -20,14 +20,16 @@ Parse terminal logs locally, manage versions, and generate system commands.
 *   **Package Manager**: npm or yarn
 
 ### 2. Development
+
+**Web Preview Mode (Mock Data)**:  
+Runs in browser with pre-loaded mock data so you can view the UI logic.
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Start local web server (Browser Mode)
 npm run dev
+```
 
-# 3. Start Electron Desktop App (Development Mode)
+**Desktop App Mode (Real Data)**:  
+Runs as Electron app. Starts with empty data and allows real system scanning.
+```bash
 npm run electron:dev
 ```
 
@@ -59,14 +61,16 @@ After building, find your installers in the `dist/` folder.
 *   **包管理器**: npm 或 yarn
 
 ### 2. 开发指南
+
+**Web 预览模式 (Mock 数据)**:  
+在浏览器中运行，默认加载模拟测试数据，方便开发和查看 UI 效果。
 ```bash
-# 1. 安装依赖
-npm install
-
-# 2. 启动本地 Web 服务 (浏览器模式)
 npm run dev
+```
 
-# 3. 启动 Electron 桌面应用 (开发模式)
+**桌面应用模式 (真实数据)**:  
+作为 Electron 应用运行。启动时数据为空，支持扫描真实的本机系统环境。
+```bash
 npm run electron:dev
 ```
 

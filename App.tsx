@@ -8,6 +8,7 @@ import PythonManager from './components/PythonManager';
 import VersionSelector from './components/VersionSelector';
 import EnvVarManager from './components/EnvVarManager';
 import { translations } from './utils/translations';
+import { isElectron } from './utils/platform';
 
 // Rich Mock Data
 const MOCK_DATA: EnvTool[] = [
@@ -35,12 +36,18 @@ const MOCK_DATA: EnvTool[] = [
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [tools, setTools] = useState<EnvTool[]>(MOCK_DATA);
+  
+  // LOGIC: If running in Electron (Real App), start empty to show real system state.
+  // If running in Web Browser (Dev/Preview), show Mock Data.
+  const [tools, setTools] = useState<EnvTool[]>(() => {
+    return isElectron() ? [] : MOCK_DATA;
+  });
+  
   const [language, setLanguage] = useState<Language>('zh'); 
   
   // Command Modal State
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalData, setModalData] = useState({ title: '', command: '', description: '' });
+  const [modalData, setModalData] = useState({ title: '', command: '', description: '', isDestructive: false });
 
   // Version Selector State
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -54,12 +61,12 @@ const App: React.FC = () => {
       const filteredNew = newTools.filter(t => !existingPaths.has(t.path));
       return [...prev, ...filteredNew];
     });
-    alert(language === 'zh' ? `成功导入 ${newTools.length} 个环境！` : `Successfully imported ${newTools.length} environments!`);
-    setActiveTab('dashboard');
+    // Optional: Auto-switch to first tab if tools found, or stay on dashboard
+    // setActiveTab('dashboard');
   };
 
-  const showCommand = (title: string, command: string, description: string) => {
-    setModalData({ title, command, description });
+  const showCommand = (title: string, command: string, description: string, isDestructive: boolean = false) => {
+    setModalData({ title, command, description, isDestructive });
     setModalOpen(true);
   };
 
@@ -85,7 +92,8 @@ const App: React.FC = () => {
     showCommand(
       `${t.uninstall} ${tool.name}`, 
       getUninstallCmd(tool), 
-      language === 'zh' ? "请在终端执行此命令卸载，然后刷新页面。" : "Run this in terminal to uninstall, then refresh."
+      language === 'zh' ? "请在终端执行此命令卸载，然后刷新页面。" : "Run this in terminal to uninstall, then refresh.",
+      true // Destructive
     );
   };
 
@@ -93,7 +101,8 @@ const App: React.FC = () => {
     showCommand(
       t.setGlobal,
       getSetGlobalCmd(tool),
-      language === 'zh' ? "复制命令并在终端运行以切换全局环境变量。" : "Run this to set global environment variables."
+      language === 'zh' ? "复制命令并在终端运行以切换全局环境变量。" : "Run this to set global environment variables.",
+      false
     );
   };
 
@@ -109,7 +118,8 @@ const App: React.FC = () => {
     showCommand(
       `${t.installNew} ${version}`,
       cmd,
-      language === 'zh' ? "复制命令到终端执行安装。" : "Run this command in terminal to install."
+      language === 'zh' ? "复制命令到终端执行安装。" : "Run this command in terminal to install.",
+      false
     );
   };
 
@@ -231,6 +241,7 @@ const App: React.FC = () => {
           description={modalData.description}
           onClose={() => setModalOpen(false)}
           language={language}
+          isDestructive={modalData.isDestructive}
         />
       )}
 

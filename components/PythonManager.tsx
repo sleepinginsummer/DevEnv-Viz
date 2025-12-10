@@ -8,7 +8,7 @@ import ToolCard from './ToolCard';
 interface PythonManagerProps {
   tools: EnvTool[];
   lang: Language;
-  onRunCommand: (title: string, cmd: string, desc: string) => void;
+  onRunCommand: (title: string, cmd: string, desc: string, isDestructive?: boolean) => void;
   onRemoveTool: (id: string) => void;
   onSetGlobal: (tool: EnvTool) => void;
   onInstall: () => void;
@@ -30,12 +30,17 @@ const PythonManager: React.FC<PythonManagerProps> = ({
   const [packages, setPackages] = useState<PipPackage[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isElectronApp, setIsElectronApp] = useState(false);
+  const [currentMirrorUrl, setCurrentMirrorUrl] = useState<string>('---');
 
   useEffect(() => {
     setIsElectronApp(isElectron());
-    // Try to auto-scan pip list if in electron when switching to packages tab
+    
+    // Auto-actions when switching tabs
     if (activeSubTab === 'packages' && isElectron() && packages.length === 0) {
       handleAutoScanPip();
+    }
+    if (activeSubTab === 'mirrors') {
+      fetchCurrentMirror();
     }
   }, [activeSubTab]);
 
@@ -46,11 +51,30 @@ const PythonManager: React.FC<PythonManagerProps> = ({
     { name: tm.douban, url: 'http://pypi.douban.com/simple/' },
   ];
 
+  const fetchCurrentMirror = async () => {
+    if (!isElectron()) {
+      setCurrentMirrorUrl("https://pypi.org/simple (Web Mock)");
+      return;
+    }
+    try {
+      const output = await runCommand('pip config get global.index-url');
+      // pip config get usually returns the url or an error if not set
+      if (output && !output.toLowerCase().includes('error') && output.trim() !== '') {
+        setCurrentMirrorUrl(output.trim());
+      } else {
+        setCurrentMirrorUrl('Default (Not Set)');
+      }
+    } catch (e) {
+      setCurrentMirrorUrl('Default (Not Set)');
+    }
+  };
+
   const handleSetMirror = (url: string) => {
     onRunCommand(
       t.setMirror,
       `pip config set global.index-url ${url}`,
-      "Run this command to change your global PyPI mirror source for faster downloads."
+      "Run this command to change your global PyPI mirror source for faster downloads.",
+      false
     );
   };
 
@@ -83,7 +107,8 @@ const PythonManager: React.FC<PythonManagerProps> = ({
     onRunCommand(
       `${t.uninstall} ${pkgName}`,
       `pip uninstall ${pkgName}`,
-      "Run this command to remove the package."
+      "Run this command to remove the package.",
+      true // Destructive
     );
   };
 
@@ -157,21 +182,50 @@ const PythonManager: React.FC<PythonManagerProps> = ({
 
         {/* === MIRRORS TAB === */}
         {activeSubTab === 'mirrors' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
-            {mirrors.map((mirror, idx) => (
-              <div key={idx} className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col justify-between hover:border-slate-500 transition-colors">
-                <div>
-                  <h4 className="font-bold text-slate-200">{mirror.name}</h4>
-                  <p className="text-xs text-slate-500 font-mono mt-1 break-all">{mirror.url}</p>
-                </div>
-                <button
-                  onClick={() => handleSetMirror(mirror.url)}
-                  className="mt-4 w-full py-2 bg-slate-700 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+          <div className="pb-20 space-y-6">
+            {/* Current Mirror Status Display */}
+            <div className="bg-slate-800/80 p-6 rounded-2xl border border-blue-500/30 shadow-lg relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-100 transition-opacity">
+                <button 
+                  onClick={fetchCurrentMirror}
+                  className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 hover:text-white transition-colors"
+                  title="Refresh Current Mirror"
                 >
-                  {t.setMirror}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                  </svg>
                 </button>
               </div>
-            ))}
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-500/20 rounded-full text-blue-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">{t.currentMirror}</h3>
+                  <p className="text-lg md:text-xl font-mono text-emerald-400 font-medium break-all">{currentMirrorUrl}</p>
+                </div>
+              </div>
+            </div>
+
+            <h3 className="text-lg font-bold text-white mb-2">Switch Mirror Source</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {mirrors.map((mirror, idx) => (
+                <div key={idx} className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col justify-between hover:border-slate-500 transition-colors group">
+                  <div>
+                    <h4 className="font-bold text-slate-200 group-hover:text-blue-400 transition-colors">{mirror.name}</h4>
+                    <p className="text-xs text-slate-500 font-mono mt-1 break-all">{mirror.url}</p>
+                  </div>
+                  <button
+                    onClick={() => handleSetMirror(mirror.url)}
+                    className="mt-4 w-full py-2 bg-slate-700 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+                  >
+                    {t.setMirror}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

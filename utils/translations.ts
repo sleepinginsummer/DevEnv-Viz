@@ -68,7 +68,11 @@ export const translations = {
       copy: "Copy",
       close: "Close",
       output: "Execution Output",
-      errorHint: "Note: Interactive commands (like sudo) may fail in this console. Use a terminal."
+      errorHint: "Note: Interactive commands (like sudo) may fail in this console. Use a terminal.",
+      confirmTitle: "Are you sure?",
+      confirmText: "This action may make changes to your system or delete files.",
+      confirmYes: "Yes, Execute",
+      confirmNo: "Cancel"
     }
   },
   zh: {
@@ -138,7 +142,11 @@ export const translations = {
       copy: "复制",
       close: "关闭",
       output: "执行结果",
-      errorHint: "注意：涉及 sudo 或交互式输入的命令可能会失败，请使用系统终端。"
+      errorHint: "注意：涉及 sudo 或交互式输入的命令可能会失败，请使用系统终端。",
+      confirmTitle: "确认执行？",
+      confirmText: "此操作将修改系统配置或删除文件，是否继续？",
+      confirmYes: "确认执行",
+      confirmNo: "取消"
     }
   }
 };

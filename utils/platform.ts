@@ -8,7 +8,12 @@ export const isElectron = (): boolean => {
 
 export const runCommand = async (cmd: string): Promise<string> => {
   if (!isElectron()) {
-    throw new Error("Web mode: Cannot execute system commands.");
+    // SIMULATION MODE FOR WEB PREVIEW
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(`[Web Simulation] Command executed successfully:\n$ ${cmd}\n\n(In the desktop app, this would execute locally.)`);
+      }, 1000);
+    });
   }
   
   // Dynamic import to avoid breaking Vite in web mode

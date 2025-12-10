@@ -5,7 +5,7 @@ import { detectOS, isElectron } from '../utils/platform';
 
 interface EnvVarManagerProps {
   language: Language;
-  onRunCommand: (title: string, cmd: string, desc: string) => void;
+  onRunCommand: (title: string, cmd: string, desc: string, isDestructive?: boolean) => void;
 }
 
 interface EnvVar {
@@ -80,7 +80,8 @@ const EnvVarManager: React.FC<EnvVarManagerProps> = ({ language, onRunCommand })
       onRunCommand(
         isEditMode ? `${t.edit} ${editVar.key}` : t.add,
         cmd,
-        t.macHint
+        t.macHint,
+        false
       );
     } else {
       // Windows command
@@ -88,7 +89,8 @@ const EnvVarManager: React.FC<EnvVarManagerProps> = ({ language, onRunCommand })
       onRunCommand(
         isEditMode ? `${t.edit} ${editVar.key}` : t.add,
         cmd,
-        t.winHint
+        t.winHint,
+        false
       );
     }
     
@@ -105,13 +107,15 @@ const EnvVarManager: React.FC<EnvVarManagerProps> = ({ language, onRunCommand })
       onRunCommand(
         `${t.delete} ${key}`,
         `unset ${key} # Remove from .zshrc manually to persist`,
-        "This temporarily unsets it. Please remove the export line from your config file manually."
+        "This temporarily unsets it. Please remove the export line from your config file manually.",
+        true // Destructive
       );
     } else {
       onRunCommand(
         `${t.delete} ${key}`,
         `REG delete HKCU\\Environment /F /V ${key}`,
-        "Deletes the user environment variable from Registry."
+        "Deletes the user environment variable from Registry.",
+        true // Destructive
       );
     }
     setVars(prev => prev.filter(v => v.key !== key));
