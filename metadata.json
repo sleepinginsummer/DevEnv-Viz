@@ -1,0 +1,5 @@
+{
+  "name": "DevEnv Viz",
+  "description": "A visualized development environment manager. Scan and organize your local JDK, Go, Python, and Node environments using AI-powered log parsing.",
+  "requestFramePermissions": []
+}
